@@ -1,0 +1,6 @@
+[INIT] Script started at 26-01-2025 12:59:40
+Total Previous Judgment Files Found: 14587
+Processing Year: 2002 | Total Courts Judgments Found: 0
+Processing Year: 2003 | Total Courts Judgments Found: 1
+Processing Year: 2004 | Total Courts Judgments Found: 31
+Processing Year: 2005 | Total Courts Judgments Found: 378

@@ -54,54 +54,49 @@ class CourtSpider(Spider):
             yield Request(url, callback=self.parse, headers=self.headers, meta={'year_no':year})
 
     def parse(self, response, **kwargs):
-        try:
-            year = response.meta.get('year_no')
-            total_records = response.css('.search-amount b::text').get('')
-            self.items_found += int(total_records)
-            self.write_logs(f"Processing Year: {year} | Total Courts Judgments Found: {total_records}")
+        year = response.meta.get('year_no')
+        total_records = response.css('.search-amount b::text').get('')
+        self.items_found += int(total_records)
+        self.write_logs(f"Processing Year: {year} | Total Courts Judgments Found: {total_records}")
 
-            #judgments Pds links and name
-            table_tr = response.css('.alfresco-table tbody tr')
-            if table_tr:
-                yield from self.pagination(response)
-        except:
-            1
+        #judgments Pds links and name
+        table_tr = response.css('.alfresco-table tbody tr')
+        if table_tr:
+            yield from self.pagination(response)
 
     def pagination(self, response):
         year = response.meta.get('year_no')
         total_records = response.css('.search-amount b::text').get('')
         table_tr = response.css('.alfresco-table tbody tr')
-        try:
-            for tr in table_tr:
-                name = tr.css('td + td ::text').get('')
-                name= name.replace('  ', ' ').replace('/', '-').strip() if name else ''
-                formatted_name = unidecode(name)
-                max_filename_length = 150  # Define a safe maximum length
-                if len(formatted_name) > max_filename_length:
-                    formatted_name = formatted_name[:145]
 
-                formatted_name = re.sub(r'[<>:"/\\|?*\[\]\n]', '_', formatted_name).strip()
-                formatted_name = re.sub(r'\s+', ' ', formatted_name)  # Remove double spaces
+        for tr in table_tr:
+            name = tr.css('td + td ::text').get('')
+            name= name.replace('  ', ' ').replace('/', '-').strip() if name else ''
+            formatted_name = unidecode(name)
+            max_filename_length = 150  # Define a safe maximum length
+            if len(formatted_name) > max_filename_length:
+                formatted_name = formatted_name[:145]
 
-                if formatted_name in self.previous_pdfs:
-                    print(f"[SKIP] Year:{year} ,'{formatted_name}' has already been scraped. Skipping to the next record...")
-                    self.items_scraped += 1
-                    continue
+            formatted_name = re.sub(r'[<>:"/\\|?*\[\]\n]', '_', formatted_name).strip()
+            formatted_name = re.sub(r'\s+', ' ', formatted_name)  # Remove double spaces
 
-                url = tr.css('td.pdf a ::attr(href)').get('')
-                url = f'https://www.courts.ie{url}' if url else ''
-                if name and url:
-                    # Trigger file download using Scrapy Request
-                    yield Request(url, callback=self.download_pdf,
-                        meta={'name': formatted_name, 'year': year}
-                        # dont_filter=True  # Allows downloading duplicate URLs if necessary
-                    )
-        except:
-            a = 1
+            if formatted_name in self.previous_pdfs:
+                print(f"[SKIP] Year:{year} ,'{formatted_name}' has already been scraped. Skipping to the next record...")
+                self.items_scraped += 1
+                continue
+
+            url = tr.css('td.pdf a ::attr(href)').get('')
+            url = f'https://www.courts.ie{url}' if url else ''
+            if name and url:
+                # Trigger file download using Scrapy Request
+                yield Request(url, callback=self.download_pdf,
+                    meta={'name': formatted_name, 'year': year}
+                    # dont_filter=True  # Allows downloading duplicate URLs if necessary
+                )
 
         #pagination
         if not response.meta.get('pagination', ''):
-            total_pages = ceil(int(total_records) / 100)
+            total_pages = ceil(int(total_records) / 50)
             for pg_no in range(1, total_pages):
                 print(pg_no)
                 url = f'{response.url}?page={pg_no}'
@@ -134,19 +129,6 @@ class CourtSpider(Spider):
             # Log the failure of the first attempt
             self.items_skipped += 1
             self.write_logs(f"Failed to save PDF on first attempt: Year:{year} | Name:{name} | Error: {e}")
-
-            # # Fallback: sanitize the filename and try again
-            # try:
-            #     # sanitized_name = re.sub(r'[<>:"/\\|?*\[\]\n]', '_', name).strip()
-            #     # sanitized_name = re.sub(r'\s+', ' ', sanitized_name)  # Remove double spaces
-            #     file_path = os.path.join(output_dir, f"{name}.pdf")
-            #     save_file(file_path)
-            #     print(f"Downloaded PDF (sanitized): {name} | Saved to: {file_path}")
-            #     self.items_scraped += 1
-            #     print(f'Item Scraped: {self.items_scraped}')
-            # except Exception as e:
-            #     # Log the failure of the second attempt
-            #     self.write_logs(f"Failed to save PDF after sanitization: Year:{year} | Name:{name} | Error: {e}")
 
     def get_previous_records(self):
         try:
