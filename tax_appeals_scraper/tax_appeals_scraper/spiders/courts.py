@@ -10,11 +10,11 @@ from scrapy import Spider, Request, FormRequest
 
 
 class CourtSpider(Spider):
-    name = "courts"
+    name ="courts"
     current_dt = datetime.now().strftime("%d%m%Y%H%M")
 
     custom_settings = {
-        # "CONCURRENT_REQUESTS": 4,
+        "CONCURRENT_REQUESTS": 4,
         'DOWNLOAD_TIMEOUT': 250,  # Extend timeout for slow responses (in seconds)
         'RETRY_TIMES': 3,  # Number of retries for failed downloads
     }
@@ -31,7 +31,8 @@ class CourtSpider(Spider):
     def __init__(self):
         super().__init__()
         self.items_scraped = 0
-        self.years_item_found = 0
+        self.items_found = 0
+        self.items_skipped = 0
         self.current_records = []
 
         # files & Records
@@ -53,40 +54,50 @@ class CourtSpider(Spider):
             yield Request(url, callback=self.parse, headers=self.headers, meta={'year_no':year})
 
     def parse(self, response, **kwargs):
-        year = response.meta.get('year_no')
-        total_records = response.css('.search-amount b::text').get('')
-        self.write_logs(f"Processing Year: {year} | Total Courts Judgments Found: {total_records}")
+        try:
+            year = response.meta.get('year_no')
+            total_records = response.css('.search-amount b::text').get('')
+            self.items_found += int(total_records)
+            self.write_logs(f"Processing Year: {year} | Total Courts Judgments Found: {total_records}")
 
-        #judgments Pds links and name
-        table_tr = response.css('.alfresco-table tbody tr')
-        if table_tr:
-            yield from self.pagination(response)
+            #judgments Pds links and name
+            table_tr = response.css('.alfresco-table tbody tr')
+            if table_tr:
+                yield from self.pagination(response)
+        except:
+            1
 
     def pagination(self, response):
         year = response.meta.get('year_no')
         total_records = response.css('.search-amount b::text').get('')
         table_tr = response.css('.alfresco-table tbody tr')
-        for tr in table_tr:
-            name = tr.css('td + td ::text').get('')
-            name= name.replace('  ', ' ').replace('/', '-').strip() if name else ''
-            formatted_name = unidecode(name)
-            max_filename_length = 150  # Define a safe maximum length
-            if len(formatted_name) > max_filename_length:
-                formatted_name = formatted_name[:145]
+        try:
+            for tr in table_tr:
+                name = tr.css('td + td ::text').get('')
+                name= name.replace('  ', ' ').replace('/', '-').strip() if name else ''
+                formatted_name = unidecode(name)
+                max_filename_length = 150  # Define a safe maximum length
+                if len(formatted_name) > max_filename_length:
+                    formatted_name = formatted_name[:145]
 
-            if formatted_name in self.previous_pdfs:
-                print(f"[SKIP] Year:{year} ,'{formatted_name}' has already been scraped. Skipping to the next record...")
-                self.items_scraped += 1
-                continue
+                formatted_name = re.sub(r'[<>:"/\\|?*\[\]\n]', '_', formatted_name).strip()
+                formatted_name = re.sub(r'\s+', ' ', formatted_name)  # Remove double spaces
 
-            url = tr.css('td.pdf a ::attr(href)').get('')
-            url = f'https://www.courts.ie{url}' if url else ''
-            if name and url:
-                # Trigger file download using Scrapy Request
-                yield Request(url, callback=self.download_pdf,
-                    meta={'name': formatted_name, 'year': year}
-                    # dont_filter=True  # Allows downloading duplicate URLs if necessary
-                )
+                if formatted_name in self.previous_pdfs:
+                    print(f"[SKIP] Year:{year} ,'{formatted_name}' has already been scraped. Skipping to the next record...")
+                    self.items_scraped += 1
+                    continue
+
+                url = tr.css('td.pdf a ::attr(href)').get('')
+                url = f'https://www.courts.ie{url}' if url else ''
+                if name and url:
+                    # Trigger file download using Scrapy Request
+                    yield Request(url, callback=self.download_pdf,
+                        meta={'name': formatted_name, 'year': year}
+                        # dont_filter=True  # Allows downloading duplicate URLs if necessary
+                    )
+        except:
+            a = 1
 
         #pagination
         if not response.meta.get('pagination', ''):
@@ -111,6 +122,7 @@ class CourtSpider(Spider):
         # Prepare output directory
         output_dir = os.path.join('output', 'courts_judgments', str(year))
         os.makedirs(output_dir, exist_ok=True)
+
         # Initial attempt to save the file
         try:
             file_path = os.path.join(output_dir, f"{name}.pdf")
@@ -120,20 +132,21 @@ class CourtSpider(Spider):
             print(f'Item Scraped: {self.items_scraped}')
         except Exception as e:
             # Log the failure of the first attempt
+            self.items_skipped += 1
             self.write_logs(f"Failed to save PDF on first attempt: Year:{year} | Name:{name} | Error: {e}")
 
-            # Fallback: sanitize the filename and try again
-            try:
-                sanitized_name = re.sub(r'[<>:"/\\|?*\[\]\n]', '_', name).strip()
-                sanitized_name = re.sub(r'\s+', ' ', sanitized_name)  # Remove double spaces
-                file_path = os.path.join(output_dir, f"{sanitized_name}.pdf")
-                save_file(file_path)
-                print(f"Downloaded PDF (sanitized): {sanitized_name} | Saved to: {file_path}")
-                self.items_scraped += 1
-                print(f'Item Scraped: {self.items_scraped}')
-            except Exception as e:
-                # Log the failure of the second attempt
-                self.write_logs(f"Failed to save PDF after sanitization: Year:{year} | Name:{name} | Error: {e}")
+            # # Fallback: sanitize the filename and try again
+            # try:
+            #     # sanitized_name = re.sub(r'[<>:"/\\|?*\[\]\n]', '_', name).strip()
+            #     # sanitized_name = re.sub(r'\s+', ' ', sanitized_name)  # Remove double spaces
+            #     file_path = os.path.join(output_dir, f"{name}.pdf")
+            #     save_file(file_path)
+            #     print(f"Downloaded PDF (sanitized): {name} | Saved to: {file_path}")
+            #     self.items_scraped += 1
+            #     print(f'Item Scraped: {self.items_scraped}')
+            # except Exception as e:
+            #     # Log the failure of the second attempt
+            #     self.write_logs(f"Failed to save PDF after sanitization: Year:{year} | Name:{name} | Error: {e}")
 
     def get_previous_records(self):
         try:
@@ -151,3 +164,10 @@ class CourtSpider(Spider):
         with open(self.logs_filepath, mode='a', encoding='utf-8') as logs_file:
             logs_file.write(f'{log_msg}\n')
             print(log_msg)
+
+    def close(Spider, reason):
+        Spider.write_logs(f'\n\nTotal Courts Judgments Found:{Spider.items_scraped}')
+        Spider.write_logs(f'Total Courts Judgments Scraped:{Spider.items_scraped}')
+        Spider.write_logs(f'Total Courts Judgments Skipped:{Spider.items_skipped}')
+        Spider.write_logs(f'Spider Started from :{Spider.script_starting_datetime}')
+        Spider.write_logs(f'Spider Stopped at :{datetime.now().strftime("%d-%m-%Y %H:%M:%S")}')

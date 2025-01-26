@@ -5,7 +5,12 @@ __pycache__/
 
 # C extensions
 *.so
-
+git rm --cached "output/courts_judgments/2010/Estate of M.K"
+Estate of M.K
+Re 
+git rm --cached "output/courts_judgments/2010/Re"
+tax_appeals_scraper/tax_appeals_scraper/output/courts_judgments/2010/Estate of M.K.
+tax_appeals_scraper/tax_appeals_scraper/output/courts_judgments/2010/Re*
 # Distribution / packaging
 .Python
 build/
